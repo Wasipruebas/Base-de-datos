@@ -1,9 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Buscador de Bultos</title>
+  <style>
+    body{font-family:Arial, sans-serif; max-width:900px; margin:40px auto; padding:0 16px; color:#111;}
+    h1{margin:0 0 8px 0;}
+    input{width:100%; padding:14px; font-size:18px; border-radius:10px; border:1px solid #ccc;}
+    .card{margin-top:16px; padding:16px; border:1px solid #e5e5e5; border-radius:12px; background:#fff;}
+    .muted{color:#666}
+    .row{padding:12px 0;border-bottom:1px solid #eee}
+  </style>
+</head>
+<body>
+  <h1>Buscador de Bultos</h1>
+  <div class="muted">Si ves esto, el HTML está OK.</div>
+
+  <div style="height:12px"></div>
+  <input id="q" placeholder="Buscá por producto o código..." />
+
+  <div id="out" class="card">Cargando productos.csv…</div>
+
 <script>
   const q = document.getElementById("q");
   const out = document.getElementById("out");
   let productos = [];
 
-  // Normaliza: minúsculas + sin tildes
   function norm(s){
     return (s ?? "")
       .toString()
@@ -13,7 +36,6 @@
       .replace(/[\u0300-\u036f]/g, "");
   }
 
-  // Parser CSV que respeta comillas y comas dentro de campos
   function parseCSV(text){
     const rows = [];
     let row = [];
@@ -24,97 +46,74 @@
       const c = text[i];
       const next = text[i + 1];
 
-      if (c === '"' ) {
-        // Doble comilla escapada ""
-        if (inQuotes && next === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
+      if (c === '"') {
+        if (inQuotes && next === '"') { cur += '"'; i++; }
+        else { inQuotes = !inQuotes; }
         continue;
       }
-
-      if (!inQuotes && (c === ",")) {
-        row.push(cur);
-        cur = "";
-        continue;
-      }
-
-      if (!inQuotes && (c === "\n")) {
-        row.push(cur);
-        rows.push(row);
-        row = [];
-        cur = "";
-        continue;
-      }
-
+      if (!inQuotes && c === ",") { row.push(cur); cur = ""; continue; }
+      if (!inQuotes && c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; continue; }
       if (c !== "\r") cur += c;
     }
-
-    // último campo
-    if (cur.length || row.length) {
-      row.push(cur);
-      rows.push(row);
-    }
-
+    if (cur.length || row.length) { row.push(cur); rows.push(row); }
     return rows;
   }
 
-  // Carga productos.csv
-  fetch("productos.csv", { cache: "no-store" })
-    .then(r => r.text())
+  function showError(msg){
+    out.innerHTML = `<b>Error</b><div class="muted">${msg}</div>`;
+  }
+
+  fetch("./productos.csv", { cache: "no-store" })
+    .then(r => {
+      if(!r.ok) throw new Error(`No se pudo abrir productos.csv (HTTP ${r.status}).`);
+      return r.text();
+    })
     .then(text => {
       const table = parseCSV(text);
-      const headers = table[0].map(h => h.trim());
+      if(!table.length) throw new Error("productos.csv está vacío.");
 
-      const idx = {
-        codigo: headers.indexOf("Código"),
-        producto: headers.indexOf("Producto"),
-        uxb: headers.indexOf("UxB"),
-        blister: headers.indexOf("Blister"),
-        categoria: headers.indexOf("Categoría"),
-      };
+      const headers = table[0].map(h => h.trim());
+      const idxProducto = headers.indexOf("Producto");
+      const idxUxB = headers.indexOf("UxB");
+      const idxCodigo = headers.indexOf("Código");
+
+      if(idxProducto === -1 || idxUxB === -1){
+        throw new Error(`No encontré columnas Producto y UxB. Encabezados: ${headers.join(" | ")}`);
+      }
 
       productos = table.slice(1)
-        .filter(r => r.length && (r[idx.producto] || "").trim() !== "")
+        .filter(r => (r[idxProducto] ?? "").trim() !== "")
         .map(r => ({
-          codigo: (r[idx.codigo] ?? "").trim(),
-          producto: (r[idx.producto] ?? "").trim(),
-          uxb: (r[idx.uxb] ?? "").trim(),        // puede ser "6" o "6/8"
-          blister: (r[idx.blister] ?? "").trim(),
-          categoria: (r[idx.categoria] ?? "").trim(),
+          producto: (r[idxProducto] ?? "").trim(),
+          uxb: (r[idxUxB] ?? "").trim(),
+          codigo: (r[idxCodigo] ?? "").trim(),
         }));
-      
+
       out.innerHTML = `<b>Listo.</b> Cargados: <b>${productos.length}</b> productos.`;
     })
-    .catch(err => {
-      out.innerHTML = `<b>Error cargando productos.csv</b><div class="muted">${err}</div>`;
-    });
+    .catch(err => showError(err.message));
 
-  // Busca y muestra top 10
   q.addEventListener("input", () => {
     const term = norm(q.value);
-    if(!term){
-      out.textContent = "Esperando búsqueda…";
-      return;
-    }
+    if(!term){ out.textContent = productos.length ? "Esperando búsqueda…" : "Cargando productos.csv…"; return; }
 
     const res = productos
-      .filter(p => norm(p.producto).includes(term))
+      .filter(p => norm(p.producto).includes(term) || norm(p.codigo).includes(term))
       .slice(0, 10);
 
     if(!res.length){
-      out.innerHTML = `<b>Sin resultados</b><div class="muted">Probá con otro nombre.</div>`;
+      out.innerHTML = `<b>Sin resultados</b><div class="muted">Probá con otro nombre o código.</div>`;
       return;
     }
 
     out.innerHTML = res.map(p => `
-      <div style="padding:12px 0;border-bottom:1px solid #eee">
+      <div class="row">
         <div><b>${p.producto}</b></div>
-        <div>Bulto (UxB): <b>${p.uxb || "-"}</b> ${p.uxb ? "unidades" : ""}</div>
-        <div class="muted">Código: ${p.codigo || "-"} · Categoría: ${p.categoria || "-"}</div>
+        <div>Bulto (UxB): <b>${p.uxb || "-"}</b></div>
+        <div class="muted">Código: ${p.codigo || "-"}</div>
       </div>
     `).join("");
   });
 </script>
+</body>
+</html>
