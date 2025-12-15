@@ -1,48 +1,36 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Buscador de Bultos</title>
-  <style>
-    body{font-family:Arial, sans-serif; max-width:900px; margin:40px auto; padding:0 16px;}
-    input{width:100%; padding:14px; font-size:18px; border-radius:10px; border:1px solid #ccc;}
-    .card{margin-top:16px; padding:16px; border:1px solid #e5e5e5; border-radius:12px;}
-    .muted{color:#666}
-  </style>
-</head>
-<body>
-  <h1>Buscador de Bultos</h1>
-  <p class="muted">Escribí un producto y te dice de cuánto viene el bulto.</p>
+<script>
+  const q = document.getElementById("q");
+  const out = document.getElementById("out");
+  let productos = [];
 
-  <input id="q" placeholder="Ej: Heineken latón" />
+  function norm(s){ return (s||"").toLowerCase().trim(); }
 
-  <div id="out" class="card">Esperando búsqueda…</div>
-
-  <script>
-    // Datos de prueba (después lo pasamos a un productos.json)
-    const productos = [
-      { nombre: "Heineken latón 710", bulto: 24 },
-      { nombre: "Quilmes 710", bulto: 16 },
-      { nombre: "Quilmes lata 473", bulto: 24 }
-    ];
-
-    const q = document.getElementById("q");
-    const out = document.getElementById("out");
-
-    function norm(s){ return (s||"").toLowerCase().trim(); }
-
-    q.addEventListener("input", () => {
-      const term = norm(q.value);
-      if(!term){ out.textContent = "Esperando búsqueda…"; return; }
-
-      const found = productos.find(p => norm(p.nombre).includes(term));
-      if(!found){
-        out.innerHTML = `<b>Sin resultados</b><div class="muted">Probá con otro nombre.</div>`;
-        return;
-      }
-      out.innerHTML = `<b>${found.nombre}</b><div>Bulto: <b>${found.bulto}</b> unidades</div>`;
+  fetch("productos.csv")
+    .then(r => r.text())
+    .then(text => {
+      const rows = text.split("\n").slice(1);
+      productos = rows.map(r => {
+        const [nombre, bulto] = r.split(",");
+        return { nombre: nombre?.trim(), bulto: bulto?.trim() };
+      });
     });
-  </script>
-</body>
-</html>
+
+  q.addEventListener("input", () => {
+    const term = norm(q.value);
+    if(!term){
+      out.textContent = "Esperando búsqueda…";
+      return;
+    }
+
+    const found = productos.find(p => norm(p.nombre).includes(term));
+    if(!found){
+      out.innerHTML = `<b>Sin resultados</b><div class="muted">Probá con otro nombre.</div>`;
+      return;
+    }
+
+    out.innerHTML = `
+      <b>${found.nombre}</b>
+      <div>Bulto: <b>${found.bulto}</b> unidades</div>
+    `;
+  });
+</script>
