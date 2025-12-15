@@ -4,9 +4,154 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Buscador de Bultos</title>
+
+  <style>
+    body{
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 16px;
+      color: #111;
+      background: #fafafa;
+    }
+    h1{ margin-bottom: 6px; }
+    .muted{ color:#666; margin-bottom:16px; }
+    input{
+      width:100%;
+      padding:14px;
+      font-size:18px;
+      border-radius:10px;
+      border:1px solid #ccc;
+      outline:none;
+    }
+    .card{
+      margin-top:16px;
+      padding:16px;
+      border:1px solid #e5e5e5;
+      border-radius:12px;
+      background:#fff;
+    }
+    .row{
+      padding:12px 0;
+      border-bottom:1px solid #eee;
+    }
+    .row:last-child{ border-bottom:none; }
+  </style>
 </head>
+
 <body>
+
   <h1>Buscador de Bultos</h1>
-  <p>Si ves esto, Pages ya está andando.</p>
+  <div class="muted">
+    Escribí el nombre del producto o el código y te dice de cuánto viene el bulto.
+  </div>
+
+  <input id="q" placeholder="Ej: Coca cola 2,25 / Heineken / Quilmes 710" />
+
+  <div id="out" class="card">Cargando productos.csv…</div>
+
+<script>
+  const q = document.getElementById("q");
+  const out = document.getElementById("out");
+  let productos = [];
+
+  function norm(s){
+    return (s ?? "")
+      .toString()
+      .toLowerCase()
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  // Parser CSV robusto (respeta comillas y comas)
+  function parseCSV(text){
+    const rows = [];
+    let row = [];
+    let cur = "";
+    let inQuotes = false;
+
+    for(let i=0;i<text.length;i++){
+      const c = text[i];
+      const next = text[i+1];
+
+      if(c === '"'){
+        if(inQuotes && next === '"'){ cur += '"'; i++; }
+        else inQuotes = !inQuotes;
+        continue;
+      }
+
+      if(!inQuotes && c === ","){ row.push(cur); cur=""; continue; }
+      if(!inQuotes && c === "\n"){ row.push(cur); rows.push(row); row=[]; cur=""; continue; }
+      if(c !== "\r") cur += c;
+    }
+
+    if(cur.length || row.length){
+      row.push(cur);
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  fetch("./productos.csv", { cache:"no-store" })
+    .then(r=>{
+      if(!r.ok) throw new Error("No se pudo cargar productos.csv");
+      return r.text();
+    })
+    .then(text=>{
+      const table = parseCSV(text);
+      const headers = table[0].map(h=>h.trim());
+
+      const iProducto = headers.indexOf("Producto");
+      const iUxB = headers.indexOf("UxB");
+      const iCodigo = headers.indexOf("Código");
+
+      if(iProducto === -1 || iUxB === -1){
+        throw new Error("El CSV debe tener columnas Producto y UxB");
+      }
+
+      productos = table.slice(1)
+        .filter(r => (r[iProducto] ?? "").trim() !== "")
+        .map(r => ({
+          producto: (r[iProducto] ?? "").trim(),
+          uxb: (r[iUxB] ?? "").trim(),
+          codigo: (r[iCodigo] ?? "").trim()
+        }));
+
+      out.innerHTML = `<b>Listo.</b> Productos cargados: <b>${productos.length}</b>`;
+    })
+    .catch(err=>{
+      out.innerHTML = `<b>Error:</b> ${err.message}`;
+    });
+
+  q.addEventListener("input", ()=>{
+    const term = norm(q.value);
+    if(!term){
+      out.textContent = productos.length ? "Esperando búsqueda…" : "Cargando productos.csv…";
+      return;
+    }
+
+    const res = productos
+      .filter(p =>
+        norm(p.producto).includes(term) ||
+        norm(p.codigo).includes(term)
+      )
+      .slice(0,10);
+
+    if(!res.length){
+      out.innerHTML = "<b>Sin resultados</b>";
+      return;
+    }
+
+    out.innerHTML = res.map(p=>`
+      <div class="row">
+        <div><b>${p.producto}</b></div>
+        <div>Bulto (UxB): <b>${p.uxb}</b></div>
+        ${p.codigo ? `<div class="muted">Código: ${p.codigo}</div>` : ""}
+      </div>
+    `).join("");
+  });
+</script>
+
 </body>
 </html>
